@@ -50,12 +50,17 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	})
 }
 
+// take in numStories - the number of stories a user wants; default is 30
+// return a slice of items, which are the stories
 func getTopStories(numStories int) ([]item, error) {
+	// use the hn package to create a client and get the ids of the top ~450 items
 	var client hn.Client
 	ids, err := client.TopItems()
 	if err != nil {
 		return nil, errors.New("Failed to load top stories")
 	}
+
+	// create a result type and channel to pass results on
 	type result struct {
 		index int
 		item  item
@@ -63,6 +68,8 @@ func getTopStories(numStories int) ([]item, error) {
 	}
 	resultCh := make(chan result)
 
+	// create goroutines to get each hnItem,
+	// creating a result and sending it to the channel
 	for i := 0; i < numStories; i++ {
 		go func(index, id int) {
 			hnItem, err := client.GetItem(id)
@@ -73,10 +80,13 @@ func getTopStories(numStories int) ([]item, error) {
 		}(i, ids[i])
 	}
 
+	// create a results slice, appending each result as it is sent to the channel
 	var results []result
 	for i := 0; i < numStories; i++ {
 		results = append(results, <-resultCh)
 	}
+
+	// sort the slice because the goroutines jumbled the order
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].index < results[j].index
 	})
@@ -84,6 +94,8 @@ func getTopStories(numStories int) ([]item, error) {
 	var stories []item
 
 	for _, res := range results {
+		// if the result has an error, skip it
+		// continue goes to the next item in the for loop
 		if res.err != nil {
 			continue
 		}
